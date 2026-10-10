@@ -1,0 +1,139 @@
+:root {
+  --op-ink: #17182d;
+  --op-navy: #233e66;
+  --op-muted: #626a7c;
+  --op-line: #dde1eb;
+  --op-canvas: #f6f7fb;
+  --op-focus: #6b55a3;
+  --op-accent: #6751a6;
+  --op-accent-soft: #f0edf7;
+}
+
+body {
+  margin: 0;
+  padding-top: 0;
+  background: var(--op-canvas);
+  color: var(--op-ink);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 1030;
+  min-height: 72px;
+  padding: 10px 24px;
+  background: #fff !important;
+  border: 0;
+  border-bottom: 1px solid var(--op-line);
+  box-shadow: none;
+}
+.navbar > .container-fluid { padding: 0; }
+.navbar-brand { padding: 0; margin-right: 32px; color: var(--op-ink) !important; }
+.brand-lockup { display: inline-flex; align-items: center; gap: 10px; }
+.brand-icon { width: 34px; height: 40px; object-fit: contain; }
+.brand-name { font-size: 21px; font-weight: 650; letter-spacing: -.55px; }
+.navbar-nav { gap: 3px; }
+.navbar-nav .nav-link, .navbar-nav > li > a {
+  color: #525a6d;
+  font-size: 15px;
+  font-weight: 500;
+  padding: 11px 13px;
+  border-radius: 5px;
+}
+.navbar-nav .nav-link:hover, .navbar-nav > li > a:hover { background: #f3f1f8; color: var(--op-ink); }
+.navbar-nav .nav-link.active, .navbar-nav > li.active > a {
+  color: var(--op-navy);
+  background: var(--op-accent-soft);
+  font-weight: 650;
+}
+.navbar-nav .fa, .navbar-nav .fas, .navbar-nav .fa-solid { margin-right: 5px; }
+.navbar-toggler, .navbar-toggle { border: 1px solid var(--op-line); border-radius: 5px; box-shadow: none; }
+.navbar .dropdown-menu { border: 1px solid var(--op-line); border-radius: 6px; box-shadow: 0 6px 16px #17182d10; }
+
+.home-workspace { max-width: 1480px; margin: 0 auto; padding: 36px 40px 28px; }
+.home-intro { display: flex; align-items: center; justify-content: space-between; gap: 32px; padding: 8px 0 32px; border-bottom: 1px solid var(--op-line); }
+.home-kicker { font-size: 15px; font-weight: 600; color: var(--op-accent); margin-bottom: 10px; }
+.home-intro h1 { font-size: 40px; font-weight: 650; letter-spacing: -1.6px; margin: 0 0 14px; color: var(--op-ink); }
+.home-description { font-size: 19px; line-height: 1.6; margin: 0 0 4px; max-width: 620px; color: #40485f; }
+.home-context { font-size: 16px; color: var(--op-muted); margin: 0; }
+.home-logo { flex: 0 0 auto; object-fit: contain; width: 128px; height: 148px; }
+.directory-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 30px 0 22px; }
+.directory-heading h2 { font-size: 22px; letter-spacing: -.5px; font-weight: 650; margin: 0 0 6px; }
+.directory-heading p { font-size: 15px; margin: 0; color: var(--op-muted); }
+.directory-count { white-space: nowrap; font-size: 14px !important; font-variant-numeric: tabular-nums; }
+.module-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.tool-card { display: flex; flex-direction: column; padding: 23px 24px 20px; background: #fff; border: 1px solid var(--op-line); border-radius: 5px; min-width: 0; }
+.tool-heading { display: flex; align-items: center; gap: 11px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid #e6e7ee; }
+.tool-icon { width: 20px; font-size: 19px; color: var(--op-navy); text-align: center; flex-shrink: 0; }
+.tool-title { font-size: 19px; font-weight: 650; letter-spacing: -.25px; margin: 0; line-height: 1.4; }
+.tool-category { margin-left: auto; max-width: 102px; flex-shrink: 0; color: #626a7c; font-family: ui-monospace, Consolas, "Cascadia Mono", monospace; font-size: 12px; font-weight: 500; line-height: 1.45; letter-spacing: .2px; text-align: right; }
+.tool-text { font-size: 16px; color: #525a6d; margin: 0 0 15px; line-height: 1.65; }
+.tool-meta { display: flex; flex-direction: column; gap: 3px; font-size: 14px; color: #485169; margin-top: auto; }
+.input-label { font-size: 13px; color: #697185; }
+.tool-actions { padding: 16px 0 17px; }
+.module-open { display: inline-flex; align-items: center; gap: 12px; color: var(--op-navy) !important; font-size: 15px; font-weight: 650; text-decoration: none; }
+.module-open:hover { text-decoration: underline; text-underline-offset: 4px; }
+.module-open .fa, .module-open .fa-solid { font-size: 13px; }
+.tool-examples { padding-top: 13px; border-top: 1px solid #e6e7ee; }
+.examples-label { font-size: 13px; color: #697185; margin: 0 0 8px; }
+.example-links { display: flex; flex-wrap: wrap; column-gap: 17px; row-gap: 7px; }
+.example-link { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; color: #58458c !important; text-decoration: underline; text-decoration-color: #c8bfda; text-underline-offset: 3px; }
+.example-link:hover { color: #403368 !important; text-decoration-color: currentColor; }
+.example-link .fa, .example-link .fa-solid { font-size: 12px; }
+
+.module-workspace { max-width: 1760px; margin: 0 auto; padding: 28px 28px 0; }
+body .well { background: #fff; border: 1px solid var(--op-line); border-radius: 5px; padding: 22px; box-shadow: none; }
+body .well h4 { font-size: 17px; font-weight: 650; color: var(--op-ink); margin-top: 6px; margin-bottom: 18px; }
+body .well h5 { font-size: 15px; font-weight: 650; }
+body .well label { font-size: 14px; font-weight: 500; color: #485169; }
+body .well .help-block { color: var(--op-muted); font-size: 14px; line-height: 1.65; }
+body .form-control, body .selectize-input { border-color: #d5d9e5; border-radius: 5px; box-shadow: none; font-size: 15px; }
+body .form-control:focus, body .selectize-input.focus { border-color: var(--op-focus); box-shadow: 0 0 0 2px #6b55a31a; }
+body .btn { border-radius: 5px; font-size: 14px; font-weight: 500; }
+body .btn-primary { background: var(--op-navy); border-color: var(--op-navy); }
+body .btn-primary:hover { background: #1a2d4e; border-color: #1a2d4e; }
+body hr { border-color: var(--op-line); opacity: 1; margin: 22px 0; }
+body pre { background: #f7f8fc; border: 1px solid #e2e4ed; border-radius: 6px; padding: 15px; font-size: 14px; line-height: 1.6; }
+body table.dataTable { font-size: 14px; }
+body table.dataTable thead th { color: var(--op-ink); font-weight: 650; background: #f3f4f9; }
+body .dataTables_wrapper { color: #485169; }
+body .nav-tabs .nav-link { font-size: 15px; }
+.app-footer { max-width: 1480px; margin: 12px auto 0; padding: 22px 40px 28px; color: #697185; font-size: 14px; display: flex; justify-content: space-between; gap: 12px; }
+a:focus-visible, button:focus-visible, .btn:focus-visible { outline: 2px solid var(--op-focus); outline-offset: 4px; }
+
+@media (max-width: 1100px) {
+  .navbar { padding: 10px 16px; }
+  .navbar-brand { margin-right: 18px; }
+  .navbar-nav .nav-link, .navbar-nav > li > a { padding: 10px 9px; font-size: 14px; }
+  .home-workspace { padding: 28px 24px 20px; }
+  .module-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .module-workspace { padding: 22px 18px 0; }
+}
+@media (max-width: 767px) {
+  .navbar { min-height: 66px; padding: 10px 16px; }
+  .navbar-collapse { padding-top: 12px; }
+  .navbar-nav .nav-link, .navbar-nav > li > a { font-size: 16px; padding: 11px 12px; }
+  .home-workspace { padding: 24px 16px 12px; }
+  .home-intro { gap: 16px; align-items: flex-start; padding-bottom: 25px; }
+  .home-intro h1 { font-size: 32px; letter-spacing: -1px; margin-bottom: 12px; }
+  .home-kicker { font-size: 13px; }
+  .home-description { font-size: 16px; }
+  .home-context { font-size: 14px; }
+  .home-logo { width: 72px; height: 84px; margin-top: 16px; }
+  .directory-heading { align-items: flex-start; flex-direction: column; gap: 10px; padding-top: 24px; }
+  .directory-heading h2 { font-size: 20px; }
+  .module-grid { grid-template-columns: 1fr; gap: 14px; }
+  .tool-card { padding: 21px 20px 18px; }
+  .tool-title { font-size: 19px; }
+  .example-link { font-size: 14px; }
+  .module-workspace { padding: 18px 6px 0; }
+  body .well { padding: 18px; }
+  .app-footer { padding: 22px 16px; flex-direction: column; gap: 4px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0s !important; }
+}
