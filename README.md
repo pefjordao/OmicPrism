@@ -1,10 +1,12 @@
-<img src="www/omicprism-icon.png" align="right" height="160" alt="OmicPrism sticker" />
-
 # OmicPrism v1.0
+
+<img src="www/omicprism-icon.png" align="right" height="130" alt="OmicPrism sticker" />
 
 R Shiny application for omics visualization, time-series clustering and pathway enrichment.
 
 The application includes Overlap, PCA, Volcano, Heatmap, Mfuzz, ORA, ssGSEA, Single GSEA and Comparative GSEA modules.
+
+<br clear="right" />
 
 ## Use it online
 
