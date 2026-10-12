@@ -239,13 +239,9 @@ format_p_value <- function(p) {
 
 format_p_label <- function(p, prefix) {
 
-  formatted <- format_p_value(p)
-
-  if (startsWith(formatted, "<")) {
-    paste0(prefix, " ", formatted)
-  } else {
-    paste0(prefix, " = ", formatted)
-  }
+  formatted <- trimws(format_p_value(p))
+  ifelse(startsWith(formatted, "<"),
+    paste0(prefix, " ", formatted), paste0(prefix, " = ", formatted))
 }
 
 
@@ -604,31 +600,7 @@ collapse_duplicate_features <- function(expr_df, feature_ids, method) {
 }
 
 get_msigdb_collection <- function(species, category, subcategory = NULL) {
-  
-  msigdbr_args <- list(
-    species = species
-  )
-  
-  formals_names <- names(formals(msigdbr::msigdbr))
-  
-  if ("collection" %in% formals_names) {
-    msigdbr_args$collection <- category
-    if (!is.null(subcategory)) msigdbr_args$subcollection <- subcategory
-  } else {
-    msigdbr_args$category <- category
-    if (!is.null(subcategory)) msigdbr_args$subcategory <- subcategory
-  }
-  
-  msig <- do.call(msigdbr::msigdbr, msigdbr_args)
-  
-  validate(
-    need(
-      nrow(msig) > 0,
-      "No MSigDB gene sets returned for this selection."
-    )
-  )
-  
-  msig
+  omics_get_msigdb(species, category, subcategory)
 }
 
 add_y_positions <- function(pairwise_df, plot_df) {
@@ -812,14 +784,16 @@ run_pathway_group_statistics <- function(df, p_adjust_method = "BH", show_ns = F
             as_tibble() %>%
             mutate(
               test = "Tukey post hoc",
-              p = p.adj,
+              p = NA_real_,
+              adjustment = "Tukey; pairwise comparisons within this pathway",
               p.signif = p_to_stars(p.adj),
               p.label = format_p_label(p.adj, "Adj. P"),
               p_plot = p.adj
             ) %>%
             select(group1, group2, test, p, p.adj, p.signif, p.label, p_plot, everything())
         },
-        error = function(e) tibble()
+        error = function(e) validate(need(FALSE,
+          paste0("Tukey post hoc failed: ", conditionMessage(e))))
       )
       
     } else if (isTRUE(all_normal) && !isTRUE(variance_homogeneous)) {
@@ -844,14 +818,16 @@ run_pathway_group_statistics <- function(df, p_adjust_method = "BH", show_ns = F
             as_tibble() %>%
             mutate(
               test = "Games-Howell post hoc",
-              p = p.adj,
+              p = NA_real_,
+              adjustment = "Games-Howell; pairwise comparisons within this pathway",
               p.signif = p_to_stars(p.adj),
               p.label = format_p_label(p.adj, "Adj. P"),
               p_plot = p.adj
             ) %>%
             select(group1, group2, test, p, p.adj, p.signif, p.label, p_plot, everything())
         },
-        error = function(e) tibble()
+        error = function(e) validate(need(FALSE,
+          paste0("Games-Howell post hoc failed: ", conditionMessage(e))))
       )
       
     } else {
@@ -874,13 +850,15 @@ run_pathway_group_statistics <- function(df, p_adjust_method = "BH", show_ns = F
             as_tibble() %>%
             mutate(
               test = paste0("Dunn post hoc; p.adjust = ", p_adjust_method),
+              adjustment = paste0(p_adjust_method, "; pairwise comparisons within this pathway"),
               p.signif = p_to_stars(p.adj),
               p.label = format_p_label(p.adj, "Adj. P"),
               p_plot = p.adj
             ) %>%
             select(group1, group2, test, p, p.adj, p.signif, p.label, p_plot, everything())
         },
-        error = function(e) tibble()
+        error = function(e) validate(need(FALSE,
+          paste0("Dunn post hoc failed: ", conditionMessage(e))))
       )
     }
   }
@@ -1111,6 +1089,24 @@ run_pathway_omnibus_only <- function(df) {
 
 
 # =========================================================
+# Pathway-wide FDR is calculated before display filtering or Top N selection.
+# Failed/undefined tests retain NA and are not treated as valid hypotheses.
+adjust_pathway_pvalues <- function(pvalues) {
+  adjusted <- rep(NA_real_, length(pvalues))
+  valid <- is.finite(pvalues) & pvalues >= 0 & pvalues <= 1
+  adjusted[valid] <- stats::p.adjust(pvalues[valid], method = "BH")
+  adjusted
+}
+
+filter_pathway_statistics <- function(stats_df, source = "adjusted", cutoff = 0.05) {
+  validate(need(source %in% c("adjusted", "nominal"), "Invalid heatmap P-value source."))
+  omics_number_parameter(cutoff, "Heatmap P-value/FDR cutoff", 0, 1)
+  metric <- if (source == "adjusted") "padj" else "pvalue"
+  stats_df %>%
+    filter(!is.na(.data[[metric]]), .data[[metric]] <= cutoff) %>%
+    arrange(.data[[metric]], desc(group_mean_variance), desc(score_range))
+}
+
 # UI
 # =========================================================
 
@@ -1222,29 +1218,7 @@ ssgseaModuleUI <- function(id) {
           conditionalPanel(
             condition = sprintf("input['%s'] == 'msigdb'", ns("geneset_source")),
             
-            selectInput(
-              ns("species"),
-              "Species:",
-              choices = c(
-                "Homo sapiens",
-                "Mus musculus",
-                "Rattus norvegicus"
-              ),
-              selected = "Homo sapiens"
-            ),
-            
-            selectInput(
-              ns("category"),
-              "Main category:",
-              choices = msigdb_category_choices(),
-              selected = "H"
-            ),
-            
-            selectInput(
-              ns("subcategory"),
-              "Subcategory:",
-              choices = NULL
-            )
+            omics_msigdb_ui(ns)
           ),
           
           conditionalPanel(
@@ -1254,7 +1228,8 @@ ssgseaModuleUI <- function(id) {
               ns("gmt_upload"),
               "Upload custom gene sets (.gmt)",
               accept = c(".gmt", ".txt")
-            )
+            ),
+            p(class = "help-block", "Input IDs must match the GMT exactly. No gene/protein IDs are converted.")
           ),
           
           hr(),
@@ -1323,7 +1298,7 @@ ssgseaModuleUI <- function(id) {
           
           p(
             class = "ssgsea-help",
-            "The heatmap displays pathways passing the same nominal global group-comparison P-value used in the selected-pathway boxplot."
+            "Heatmap filtering uses the global comparison of ssGSEA scores between groups. BH FDR is calculated across all tested pathways before display selection; nominal P-values are available for exploration."
           ),
           
           sliderInput(
@@ -1335,9 +1310,16 @@ ssgseaModuleUI <- function(id) {
             step = 5
           ),
           
+          radioButtons(
+            ns("heatmap_p_source"),
+            "Use for heatmap pathway filtering:",
+            choices = c("Adjusted P-value / FDR (BH)" = "adjusted", "Nominal P-value" = "nominal"),
+            selected = "adjusted"
+          ),
+
           numericInput(
             ns("heatmap_pvalue_cutoff"),
-            "Nominal P-value cutoff for heatmap:",
+            "Heatmap P-value / FDR cutoff:",
             value = 0.05,
             min = 0,
             max = 1,
@@ -1590,7 +1572,7 @@ ssgseaModuleUI <- function(id) {
           
           downloadButton(
             ns("download_pathway_statistics"),
-            "Download significant pathway P-values",
+            "Download pathway P-values and FDR",
             class = "btn-secondary",
             style = "width:100%"
           )
@@ -1722,29 +1704,7 @@ ssgseaModuleServer <- function(id) {
     # 3) MSigDB Subcategory Mapping
     # =====================================================
     
-    observeEvent(input$category, {
-      
-      subcats <- msigdb_subcategory_choices(input$category)
-      
-      updateSelectInput(
-        session,
-        "subcategory",
-        choices = subcats,
-        selected = ""
-      )
-      
-    }, ignoreInit = FALSE)
-    
-    get_safe_subcategory <- reactive({
-      
-      allowed <- input$category %in% c("C2", "C3", "C4", "C5", "C7")
-      
-      if (allowed && !is.null(input$subcategory) && input$subcategory != "") {
-        input$subcategory
-      } else {
-        NULL
-      }
-    })
+    get_safe_subcategory <- omics_msigdb_server(input, session, "geneset_source")
     
     # =====================================================
     # 4) Expression Matrix Processing
@@ -1986,7 +1946,7 @@ ssgseaModuleServer <- function(id) {
       
       selectInput(
         ns("posthoc_adjust_method"),
-        "Post hoc P-value adjustment:",
+        "Dunn post hoc P-value adjustment:",
         choices = c(
           "BH",
           "bonferroni",
@@ -2109,10 +2069,7 @@ ssgseaModuleServer <- function(id) {
         
         req(input$gmt_upload)
         
-        gsets <- GSVA::readGMT(
-          input$gmt_upload$datapath,
-          valueType = "list"
-        )
+        gsets <- omics_read_gmt(input$gmt_upload$datapath)
         
         gsets <- lapply(gsets, unique)
         gsets <- gsets[lengths(gsets) > 0]
@@ -2189,6 +2146,7 @@ ssgseaModuleServer <- function(id) {
       
       if (input$geneset_source == "msigdb") {
         cat("Gene set source: MSigDB\n")
+
         cat("Species:", input$species, "\n")
         cat("Category:", input$category, "\n")
         cat("Subcategory:", get_safe_subcategory() %||% "None", "\n")
@@ -2214,8 +2172,7 @@ ssgseaModuleServer <- function(id) {
     # =====================================================
     
     ssgsea_scores_state <- reactive({
-      list(matrix = expr_matrix(), source = input$geneset_source, gmt = input$gmt_upload,
-        species = input$species, category = input$category, subcategory = get_safe_subcategory(),
+      list(matrix = expr_matrix(), source = input$geneset_source, gmt = input$gmt_upload, species = input$species, category = input$category, subcategory = get_safe_subcategory(),
         min_size = input$min_size, max_size = input$max_size,
         alpha = input$alpha, normalize = input$normalize_scores)
     })
@@ -2232,6 +2189,7 @@ ssgseaModuleServer <- function(id) {
       
       mat <- expr_matrix()
       gsets <- gene_sets()
+      omics_validate_gene_set_ids(rownames(mat), gsets, "Expression matrix")
       ov <- overlap_n()
       
       validate(
@@ -2369,7 +2327,8 @@ ssgseaModuleServer <- function(id) {
         cat("Pathways displayed in heatmap:", nrow(heatmap_matrix()), "\n")
       }
 
-      cat("Heatmap nominal P-value cutoff:", input$heatmap_pvalue_cutoff %||% 0.05, "\n")
+      cat("Heatmap filter:", input$heatmap_p_source %||% "adjusted", "\n")
+      cat("Heatmap P-value/FDR cutoff:", input$heatmap_pvalue_cutoff %||% 0.05, "\n")
 
       cat("Score range:\n")
       print(range(es, na.rm = TRUE))
@@ -2477,7 +2436,7 @@ ssgseaModuleServer <- function(id) {
         }
       ) %>%
         mutate(
-          padj = p.adjust(pvalue, method = "BH")
+          padj = adjust_pathway_pvalues(pvalue)
         ) %>%
         arrange(
           pvalue,
@@ -2488,6 +2447,12 @@ ssgseaModuleServer <- function(id) {
       stat_df
     })
     
+    filtered_pathway_stats <- reactive({
+      filter_pathway_statistics(heatmap_pathway_stats(),
+        source = input$heatmap_p_source %||% "adjusted",
+        cutoff = input$heatmap_pvalue_cutoff %||% 0.05)
+    })
+
     heatmap_matrix <- reactive({
       omics_number_parameter(input$top_n, "Number of displayed pathways", 1, .Machine$integer.max, TRUE)
       omics_number_parameter(input$heatmap_pvalue_cutoff %||% 0.05, "Heatmap P-value cutoff", 0, 1)
@@ -2503,25 +2468,14 @@ ssgseaModuleServer <- function(id) {
         nrow(es)
       )
       
-      stats_df <- heatmap_pathway_stats()
-      
-      selected_pathways <- stats_df %>%
-        filter(
-          !is.na(pvalue),
-          pvalue <= (input$heatmap_pvalue_cutoff %||% 0.05)
-        ) %>%
-        arrange(
-          pvalue,
-          desc(group_mean_variance),
-          desc(score_range)
-        ) %>%
+      selected_pathways <- filtered_pathway_stats() %>%
         slice_head(n = top_n) %>%
         pull(Pathway)
       
       validate(
         need(
           length(selected_pathways) > 0,
-          "No pathways passed the nominal P-value cutoff for the heatmap. Increase the cutoff."
+          "No pathways passed the selected P-value/FDR cutoff for the heatmap. Review the cutoff or filtering metric."
         )
       )
       
@@ -2836,11 +2790,40 @@ ssgseaModuleServer <- function(id) {
         )
       )
       
-      run_pathway_group_statistics(
+      result <- run_pathway_group_statistics(
         df = df,
         p_adjust_method = input$posthoc_adjust_method %||% "BH",
         show_ns = FALSE
       )
+      if (result$n_groups < 2 || nrow(result$omnibus_table) == 0) return(result)
+
+      global <- selected_pathway_global_stats()
+      validate(need(nrow(global) == 1, "Global pathway statistics are unavailable."))
+      n_tested <- sum(is.finite(heatmap_pathway_stats()$pvalue))
+      result$omnibus_table <- result$omnibus_table %>%
+        mutate(p.adj = global$padj[1], adjustment = "BH across all tested pathways",
+          n_pathways_tested = n_tested)
+      result$omnibus_label <- paste0(global$test[1], ": ",
+        format_p_label(global$pvalue[1], "Nominal P"), " | ",
+        format_p_label(global$padj[1], "FDR (BH)"))
+
+      # With two groups there is one contrast per pathway: its discovery FDR
+      # belongs to the family of all pathway tests, not a one-P-value adjustment.
+      if (result$n_groups == 2 && nrow(result$pairwise_table) > 0) {
+        result$pairwise_table <- result$pairwise_table %>%
+          mutate(p.adj = global$padj[1], p_plot = p.adj,
+            p.signif = p_to_stars(p.adj), p.label = format_p_label(p.adj, "FDR (BH)"),
+            adjustment = "BH across all tested pathways")
+        result$plot_pairwise_table <- add_y_positions(
+          result$pairwise_table %>% filter(!is.na(p_plot), p_plot <= 0.05), df)
+        scope <- "Bracket significance: BH FDR across all tested pathways."
+      } else {
+        scope <- paste0("Pairwise significance: adjustment within this pathway (",
+          paste(unique(result$pairwise_table$test), collapse = "; "),
+          "). Global FDR: BH across all tested pathways.")
+      }
+      result$assumption_caption <- paste(result$assumption_caption, scope, sep = "\n")
+      result
     })
     
     
@@ -2852,6 +2835,7 @@ ssgseaModuleServer <- function(id) {
         sample_annotation()
       )
       
+      if (dplyr::n_distinct(sample_annotation()$Group) < 2) return(tibble())
       stats_df <- heatmap_pathway_stats()
       
       stats_df %>%
@@ -2934,12 +2918,9 @@ ssgseaModuleServer <- function(id) {
         subtitle_text <- stats_res$omnibus_label
         
         if (!is.null(global_stats) && nrow(global_stats) > 0) {
-          
-          subtitle_text <- paste0(
-            global_stats$test[1],
-            ": ",
-            format_p_label(global_stats$pvalue[1], "P")
-          )
+          subtitle_text <- paste0(global_stats$test[1], ": ",
+            format_p_label(global_stats$pvalue[1], "Nominal P"), " | ",
+            format_p_label(global_stats$padj[1], "FDR (BH)"))
         }
         
         p <- ggplot(
@@ -3141,6 +3122,9 @@ ssgseaModuleServer <- function(id) {
       cat("Number of groups:", stats_res$n_groups, "\n")
       cat("Omnibus test:\n")
       print(stats_res$omnibus_table)
+      cat("\nGlobal adjustment: BH across all tested pathways, before heatmap filtering or Top N selection.\n")
+      cat("\nPairwise comparisons (adjustment scope shown explicitly):\n")
+      print(stats_res$pairwise_table)
       
       cat("\nNormality by group:\n")
       print(stats_res$normality_table)
@@ -3177,22 +3161,19 @@ ssgseaModuleServer <- function(id) {
       
       req(heatmap_pathway_stats())
       
-      heatmap_pathway_stats() %>%
-        filter(
-          !is.na(pvalue),
-          pvalue <= (input$heatmap_pvalue_cutoff %||% 0.05)
-        ) %>%
-        arrange(
-          pvalue,
-          desc(group_mean_variance),
-          desc(score_range)
-        ) %>%
+      source <- input$heatmap_p_source %||% "adjusted"
+      metric <- if (source == "adjusted") "padj" else "pvalue"
+      filtered_pathway_stats() %>%
         transmute(
           Pathway = Pathway,
           Test = test,
           Statistic = statistic,
-          `P-value` = pvalue,
-          Significance = p_to_stars(pvalue)
+          `Nominal P-value` = pvalue,
+          `FDR (BH across pathways)` = padj,
+          `Heatmap filter metric` = source,
+          `Heatmap cutoff` = input$heatmap_pvalue_cutoff %||% 0.05,
+          `Pathways tested for BH` = sum(is.finite(heatmap_pathway_stats()$pvalue)),
+          Significance = p_to_stars(.data[[metric]])
         )
     })
     

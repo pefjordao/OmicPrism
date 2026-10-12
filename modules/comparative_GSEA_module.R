@@ -241,13 +241,7 @@ normalize_feature_ids <- function(x, method = "keep") {
     as.character() %>%
     stringr::str_trim()
   
-  if (method == "uppercase") {
-    x <- stringr::str_to_upper(x)
-  }
-  
-  if (method == "lowercase") {
-    x <- stringr::str_to_lower(x)
-  }
+  validate(need(identical(method, "keep"), "Identifier conversion is disabled. Use exact IDs."))
   
   x
 }
@@ -351,35 +345,7 @@ format_numeric_table <- function(x, digits = 3) {
 }
 
 get_msigdb_collection <- function(species, category, subcategory = NULL) {
-  
-  msigdbr_args <- list(
-    species = species
-  )
-  
-  formals_names <- names(formals(msigdbr::msigdbr))
-  
-  if ("collection" %in% formals_names) {
-    msigdbr_args$collection <- category
-    if (!is.null(subcategory)) msigdbr_args$subcollection <- subcategory
-  } else {
-    msigdbr_args$category <- category
-    if (!is.null(subcategory)) msigdbr_args$subcategory <- subcategory
-  }
-  
-  msig <- do.call(msigdbr::msigdbr, msigdbr_args)
-  
-  validate(
-    need(
-      nrow(msig) > 0,
-      "No MSigDB gene sets returned for this selection."
-    ),
-    need(
-      "gs_name" %in% colnames(msig),
-      "MSigDB output does not contain the expected column: gs_name."
-    )
-  )
-  
-  msig
+  omics_get_msigdb(species, category, subcategory)
 }
 
 prepare_ranked_list <- function(df, col_id, col_stat, id_case = "keep") {
@@ -595,30 +561,20 @@ gseaCompareUI <- function(id) {
         # -------------------------------------------------
         
         wellPanel(
-          h4("3. MSigDB Selection"),
-          
-          selectInput(
-            ns("species"),
-            "Species:",
-            choices = c(
-              "Homo sapiens",
-              "Mus musculus",
-              "Rattus norvegicus"
-            ),
-            selected = "Homo sapiens"
+          h4("3. Gene Set Source"),
+          radioButtons(
+            ns("gene_set_source"), "Gene set source:",
+            choices = c("MSigDB" = "msigdb", "Custom GMT file" = "gmt"),
+            selected = "msigdb"
           ),
-          
-          selectInput(
-            ns("category"),
-            "Main category:",
-            choices = msigdb_category_choices(),
-            selected = "H"
+          conditionalPanel(
+            condition = sprintf("input['%s'] == 'msigdb'", ns("gene_set_source")),
+            omics_msigdb_ui(ns)
           ),
-          
-          selectInput(
-            ns("subcategory"),
-            "Subcategory:",
-            choices = NULL
+          conditionalPanel(
+            condition = sprintf("input['%s'] == 'gmt'", ns("gene_set_source")),
+            fileInput(ns("gmt_file"), "Upload custom gene sets (.gmt)", accept = c(".gmt")),
+            p(class = "help-block", "The same GMT is used for both contrasts. Input IDs must match exactly; no gene/protein IDs are converted.")
           )
         ),
         
@@ -998,29 +954,7 @@ gseaCompareServer <- function(id) {
     # 3) MSigDB Subcategory Mapping
     # =====================================================
     
-    observeEvent(input$category, {
-      
-      subcats <- msigdb_subcategory_choices(input$category)
-      
-      updateSelectInput(
-        session,
-        "subcategory",
-        choices = subcats,
-        selected = ""
-      )
-      
-    }, ignoreInit = FALSE)
-    
-    get_safe_subcategory <- reactive({
-      
-      allowed <- input$category %in% c("C2", "C3", "C4", "C5", "C7")
-      
-      if (allowed && !is.null(input$subcategory) && input$subcategory != "") {
-        input$subcategory
-      } else {
-        NULL
-      }
-    })
+    get_safe_subcategory <- omics_msigdb_server(input, session, "gene_set_source")
     
     # =====================================================
     # 4) Running State
@@ -1063,9 +997,16 @@ gseaCompareServer <- function(id) {
       cat("ID column:", input$col_id_2, "\n")
       cat("Rank column:", input$col_stat_2, "\n\n")
       
-      cat("MSigDB species:", input$species, "\n")
-      cat("MSigDB category:", input$category, "\n")
-      cat("MSigDB subcategory:", get_safe_subcategory() %||% "None", "\n")
+      cat("Gene set source:", input$gene_set_source %||% "msigdb", "\n")
+      if ((input$gene_set_source %||% "msigdb") == "msigdb") {
+
+        cat("Species of gene symbols:", input$species, "\n")
+        cat("MSigDB category:", input$category, "\n")
+        cat("MSigDB subcategory:", get_safe_subcategory() %||% "All", "\n")
+      } else {
+        cat("GMT file:", input$gmt_file$name %||% "Not uploaded", "\n")
+      }
+      cat("Identifier matching: exact; no conversion\n")
       cat("GSEA algorithm: fgseaMultilevel\n")
       cat("Pathway selection strategy:", input$selection_strategy %||% "balanced", "\n")
     })
@@ -1074,11 +1015,23 @@ gseaCompareServer <- function(id) {
     # 6) Run Comparative GSEA
     # =====================================================
     
+    gene_sets <- reactive({
+      if ((input$gene_set_source %||% "msigdb") == "gmt") {
+        req(input$gmt_file)
+        return(omics_read_gmt(input$gmt_file$datapath))
+      }
+      msig <- get_msigdb_collection(
+        species = input$species, category = input$category,
+        subcategory = get_safe_subcategory()
+      )
+      prepare_pathways(msig, id_column = "gene_symbol", id_case = "keep")
+    })
+
     comparison_raw_state <- reactive({
       list(data1 = raw_data_1(), data2 = raw_data_2(),
         id1 = input$col_id_1, stat1 = input$col_stat_1,
         id2 = input$col_id_2, stat2 = input$col_stat_2,
-        species = input$species, category = input$category,
+        source = input$gene_set_source %||% "msigdb", gmt = input$gmt_file, species = input$species, category = input$category,
         subcategory = get_safe_subcategory(), min_size = input$min_size, max_size = input$max_size)
     })
 
@@ -1128,20 +1081,12 @@ gseaCompareServer <- function(id) {
           id_case = "keep"
         )
         
-        incProgress(0.45, detail = "Loading MSigDB gene sets")
+        incProgress(0.45, detail = "Loading gene sets")
+        pathways <- gene_sets()
         
-        msig <- get_msigdb_collection(
-          species = input$species,
-          category = input$category,
-          subcategory = get_safe_subcategory()
-        )
-        
-        pathways <- prepare_pathways(
-          msig = msig,
-          id_column = "gene_symbol",
-          id_case = "keep"
-        )
-        
+        omics_validate_gene_set_ids(names(ranks1), pathways, "Ranked list 1")
+        omics_validate_gene_set_ids(names(ranks2), pathways, "Ranked list 2")
+
         diag_1 <- make_gsea_compare_overlap_diagnostics(
           ranked_ids = names(ranks1),
           pathways = pathways

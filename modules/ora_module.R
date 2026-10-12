@@ -320,30 +320,7 @@ read_universe_file <- function(path, original_name = NULL) {
 }
 
 get_msigdb_terms <- function(species, category, subcategory = NULL) {
-  
-  msigdbr_args <- list(
-    species = species
-  )
-  
-  formals_names <- names(formals(msigdbr::msigdbr))
-  
-  if ("collection" %in% formals_names) {
-    msigdbr_args$collection <- category
-    if (!is.null(subcategory)) msigdbr_args$subcollection <- subcategory
-  } else {
-    msigdbr_args$category <- category
-    if (!is.null(subcategory)) msigdbr_args$subcategory <- subcategory
-  }
-  
-  msig <- do.call(msigdbr::msigdbr, msigdbr_args)
-  
-  validate(
-    need(
-      all(c("gs_name", "gene_symbol") %in% colnames(msig)),
-      "MSigDB output does not contain expected columns: gs_name and gene_symbol."
-    )
-  )
-  
+  msig <- omics_get_msigdb(species, category, subcategory)
   msig %>%
     dplyr::select(term = gs_name, gene = gene_symbol) %>%
     dplyr::distinct() %>%
@@ -351,20 +328,8 @@ get_msigdb_terms <- function(species, category, subcategory = NULL) {
 }
 
 read_gmt_terms <- function(path) {
-  
-  gmt <- clusterProfiler::read.gmt(path)
-  
-  validate(
-    need(
-      all(c("term", "gene") %in% colnames(gmt)),
-      "Invalid GMT file. Expected columns: term and gene."
-    )
-  )
-  
-  gmt %>%
-    dplyr::select(term, gene) %>%
-    dplyr::distinct() %>%
-    dplyr::filter(!is.na(term), !is.na(gene), term != "", gene != "")
+  sets <- omics_read_gmt(path)
+  tibble(term = rep(names(sets), lengths(sets)), gene = unlist(sets, use.names = FALSE))
 }
 
 format_gene_preview <- function(x, n = 30) {
@@ -584,29 +549,7 @@ oraModuleUI <- function(id) {
           conditionalPanel(
             condition = sprintf("input['%s'] == 'msigdb'", ns("gene_set_source")),
             
-            selectInput(
-              ns("species"),
-              "Species:",
-              choices = c(
-                "Homo sapiens",
-                "Mus musculus",
-                "Rattus norvegicus"
-              ),
-              selected = "Homo sapiens"
-            ),
-            
-            selectInput(
-              ns("category"),
-              "Main category:",
-              choices = msigdb_category_choices(),
-              selected = "H"
-            ),
-            
-            selectInput(
-              ns("subcategory"),
-              "Subcategory:",
-              choices = NULL
-            )
+            omics_msigdb_ui(ns)
           ),
           
           conditionalPanel(
@@ -616,7 +559,8 @@ oraModuleUI <- function(id) {
               ns("gmt_file"),
               "Upload GMT file",
               accept = c(".gmt")
-            )
+            ),
+            p(class = "help-block", "Input IDs must match the GMT exactly. No gene/protein IDs are converted.")
           ),
           
           hr(),
@@ -1107,29 +1051,7 @@ oraModuleServer <- function(id) {
     # 3) MSigDB Subcategory Mapping
     # =====================================================
     
-    observeEvent(input$category, {
-      
-      subcats <- msigdb_subcategory_choices(input$category)
-
-      updateSelectInput(
-        session,
-        "subcategory",
-        choices = subcats,
-        selected = ""
-      )
-
-    }, ignoreInit = FALSE)
-    
-    get_safe_subcategory <- reactive({
-      
-      allowed <- input$category %in% c("C2", "C3", "C4", "C5", "C7")
-      
-      if (allowed && !is.null(input$subcategory) && input$subcategory != "") {
-        input$subcategory
-      } else {
-        NULL
-      }
-    })
+    get_safe_subcategory <- omics_msigdb_server(input, session, "gene_set_source")
     
     # =====================================================
     # 4) Prepared Input Table
@@ -1471,6 +1393,7 @@ oraModuleServer <- function(id) {
       cat("Gene set source:", input$gene_set_source, "\n")
       
       if (input$gene_set_source == "msigdb") {
+
         cat("MSigDB species:", input$species, "\n")
         cat("MSigDB category:", input$category, "\n")
         cat("MSigDB subcategory:", get_safe_subcategory() %||% "None", "\n")
@@ -1528,6 +1451,9 @@ oraModuleServer <- function(id) {
           )
         )
         
+        omics_validate_gene_set_ids(selected_ids, t2g$gene, "Selected features")
+        omics_validate_gene_set_ids(universe_ids, t2g$gene, "Universe/background")
+
         overlap_universe <- intersect(universe_ids, t2g$gene)
         overlap_selected <- intersect(gene_ids, t2g$gene)
         

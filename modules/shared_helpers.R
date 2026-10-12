@@ -185,65 +185,162 @@ omics_event_reactive <- function(eventExpr, valueExpr, state, label,
 # MSigDB Category / Subcategory Choices
 # =========================================================
 
+.omics_msigdb_catalog_cache <- new.env(parent = emptyenv())
+
+omics_msigdb_catalog <- function() {
+  if (!exists("HS", envir = .omics_msigdb_catalog_cache, inherits = FALSE)) {
+    shiny::validate(shiny::need(
+      "db_species" %in% names(formals(msigdbr::msigdbr_collections)),
+      "Update msigdbr to a version supporting the MSigDB collection catalog."
+    ))
+    catalog <- tryCatch(msigdbr::msigdbr_collections(db_species = "HS"), error = identity)
+    shiny::validate(shiny::need(!inherits(catalog, "error"), paste0(
+      "Cannot load the MSigDB collection catalog. Check the network or msigdbr cache. ",
+      if (inherits(catalog, "error")) conditionMessage(catalog) else ""
+    )))
+    shiny::validate(shiny::need(nrow(catalog) > 0, "No collections available for this MSigDB database."))
+    .omics_msigdb_catalog_cache[["HS"]] <- catalog
+  }
+  .omics_msigdb_catalog_cache[["HS"]]
+}
+
+omics_msigdb_species_choices <- function() {
+  sort(unique(msigdbr::msigdbr_species()$species_name))
+}
+
 msigdb_category_choices <- function() {
-  c(
-    "H: hallmark gene sets" = "H",
-    "C1: positional gene sets" = "C1",
-    "C2: curated gene sets" = "C2",
-    "C3: regulatory gene sets" = "C3",
-    "C4: computational gene sets" = "C4",
-    "C5: ontology gene sets" = "C5",
-    "C6: oncogenic gene sets" = "C6",
-    "C7: immunologic gene sets" = "C7",
-    "C8: cell type signature gene sets" = "C8"
-  )
+  catalog <- omics_msigdb_catalog()
+  codes <- unique(catalog$gs_collection)
+  labels <- catalog$gs_collection_name[match(codes, catalog$gs_collection)]
+  # Some catalog rows label the subcollection rather than the main collection.
+  main_labels <- c(H = "Hallmark gene sets", C1 = "Positional gene sets",
+    C2 = "Curated gene sets", C3 = "Regulatory gene sets", C4 = "Computational gene sets",
+    C5 = "Ontology gene sets", C6 = "Oncogenic gene sets", C7 = "Immunologic gene sets",
+    C8 = "Cell type signature gene sets", C9 = "Computational perturbation signatures")
+  known <- codes %in% names(main_labels)
+  labels[known] <- unname(main_labels[codes[known]])
+  stats::setNames(codes, paste0(codes, ": ", labels))
 }
 
 msigdb_subcategory_choices <- function(category) {
+  catalog <- omics_msigdb_catalog()
+  codes <- unique(catalog$gs_subcollection[catalog$gs_collection == category])
+  codes <- codes[!is.na(codes) & nzchar(codes)]
+  c("All subcollections" = "", stats::setNames(codes, codes))
+}
 
-  switch(
-    category,
-
-    "H" = c("None" = ""),
-    "C1" = c("None" = ""),
-
-    "C2" = c(
-      "CGP: chemical and genetic perturbations" = "CGP",
-      "CP:BIOCARTA: BioCarta gene sets" = "CP:BIOCARTA",
-      "CP:KEGG_MEDICUS: KEGG Medicus gene sets" = "CP:KEGG_MEDICUS",
-      "CP:PID: PID gene sets" = "CP:PID",
-      "CP:REACTOME: Reactome gene sets" = "CP:REACTOME",
-      "CP:WIKIPATHWAYS: WikiPathways gene sets" = "CP:WIKIPATHWAYS",
-      "CP:KEGG_LEGACY: KEGG Legacy gene sets" = "CP:KEGG_LEGACY"
-    ),
-
-    "C3" = c(
-      "MIR:MIRDB: miRDB microRNA targets" = "MIR:MIRDB",
-      "MIR:MIR_LEGACY: legacy microRNA targets" = "MIR:MIR_LEGACY",
-      "TFT:GTRD: GTRD transcription factor targets" = "TFT:GTRD",
-      "TFT:TFT_LEGACY: legacy transcription factor targets" = "TFT:TFT_LEGACY"
-    ),
-
-    "C4" = c(
-      "3CA: Curated Cancer Cell Atlas gene sets" = "3CA",
-      "CGN: cancer gene neighborhoods" = "CGN",
-      "CM: cancer modules" = "CM"
-    ),
-
-    "C5" = c(
-      "GO:BP: GO biological process" = "GO:BP",
-      "GO:CC: GO cellular component" = "GO:CC",
-      "GO:MF: GO molecular function" = "GO:MF",
-      "HPO: Human Phenotype Ontology" = "HPO"
-    ),
-
-    "C6" = c("None" = ""),
-
-    "C7" = c(
-      "IMMUNESIGDB: ImmuneSigDB gene sets" = "IMMUNESIGDB",
-      "VAX: vaccine response gene sets" = "VAX"
-    ),
-
-    "C8" = c("None" = "")
+omics_msigdb_ui <- function(ns) {
+  shiny::tagList(
+    shiny::selectInput(ns("species"), "Species:",
+      choices = omics_msigdb_species_choices(), selected = "Homo sapiens"),
+    shiny::selectInput(ns("category"), "Main category:", choices = NULL),
+    shiny::selectInput(ns("subcategory"), "Subcategory:", choices = NULL),
+    shiny::uiOutput(ns("msigdb_note"))
   )
+}
+
+# A single species menu uses the HS reference collections for all supported
+# organisms, as in the original app. Uploaded identifiers are never converted.
+omics_msigdb_server <- function(input, session, source_input) {
+  source <- shiny::reactive(input[[source_input]] %||% "msigdb")
+  shiny::observeEvent(source(), {
+    shiny::req(source() == "msigdb")
+    choices <- omics_msigdb_species_choices()
+    selected <- shiny::isolate(input$species)
+    if (is.null(selected) || !selected %in% choices) {
+      selected <- "Homo sapiens"
+    }
+    shiny::updateSelectInput(session, "species", choices = choices, selected = selected)
+    categories <- msigdb_category_choices()
+    selected <- shiny::isolate(input$category)
+    if (is.null(selected) || !selected %in% categories) {
+      selected <- if ("H" %in% categories) "H" else unname(categories[1])
+    }
+    shiny::updateSelectInput(session, "category", choices = categories, selected = selected)
+  }, ignoreInit = FALSE)
+  shiny::observeEvent(list(source(), input$category), {
+    shiny::req(source() == "msigdb", input$category)
+    shiny::req(input$category %in% msigdb_category_choices())
+    choices <- msigdb_subcategory_choices(input$category)
+    selected <- shiny::isolate(input$subcategory) %||% ""
+    if (!selected %in% choices) selected <- ""
+    shiny::updateSelectInput(session, "subcategory", choices = choices, selected = selected)
+  }, ignoreInit = FALSE)
+  session$output$msigdb_note <- shiny::renderUI({
+    shiny::req(source() == "msigdb")
+    # Loading the catalog here also gives a visible validation error if unavailable.
+    omics_msigdb_catalog()
+    shiny::p(class = "help-block",
+      "Select the species of your data. Uploaded IDs are preserved; only exact matches are used for gene set membership. Unmatched IDs do not block the remaining matches.")
+  })
+  shiny::reactive({
+    if (source() != "msigdb") return(NULL)
+    subcategory <- input$subcategory %||% ""
+    if (nzchar(subcategory)) subcategory else NULL
+  })
+}
+
+omics_get_msigdb <- function(species, category, subcategory = NULL) {
+  shiny::req(species, category)
+  shiny::validate(
+    shiny::need(species %in% omics_msigdb_species_choices(),
+      "Species is not supported by msigdbr."),
+    shiny::need(category %in% msigdb_category_choices(),
+      "Collection is not available in the selected MSigDB database."),
+    shiny::need(is.null(subcategory) || subcategory %in% msigdb_subcategory_choices(category),
+      "Subcollection is not available in the selected MSigDB collection.")
+  )
+  args <- list(species = species, db_species = "HS", collection = category)
+  if (!is.null(subcategory) && nzchar(subcategory)) args$subcollection <- subcategory
+  msig <- tryCatch(do.call(msigdbr::msigdbr, args), error = identity)
+  shiny::validate(shiny::need(!inherits(msig, "error"), paste0(
+    "Cannot load the selected MSigDB gene sets. ",
+    if (inherits(msig, "error")) conditionMessage(msig) else ""
+  )))
+  shiny::validate(shiny::need(nrow(msig) > 0 && all(c("gs_name", "gene_symbol") %in% names(msig)),
+    "The selected MSigDB collection has no usable gene symbols."))
+  msig
+}
+
+# GMT: name, description (may be blank), then one or more exact identifiers.
+# Duplicate set names are ambiguous and must never be silently dropped/merged.
+omics_read_gmt <- function(path) {
+  lines <- readLines(path, warn = FALSE, encoding = "UTF-8")
+  lines <- lines[nzchar(trimws(lines))]
+  shiny::validate(shiny::need(length(lines) > 0, "The GMT file is empty."))
+  # Preserve an original empty trailing field so malformed rows are rejected.
+  fields <- strsplit(paste0(lines, "\t"), "\t", fixed = TRUE)
+  valid <- vapply(fields, function(x) length(x) >= 3L && nzchar(x[1]) &&
+    all(nzchar(x[-c(1, 2)])) && all(x[-2] == trimws(x[-2])), logical(1))
+  shiny::validate(shiny::need(all(valid), paste0(
+    "Invalid GMT row(s): ", paste(head(which(!valid), 5), collapse = ", "),
+    ". Use tab-separated set name, description, and exact IDs without surrounding whitespace."
+  )))
+  set_names <- vapply(fields, `[[`, character(1), 1)
+  shiny::validate(shiny::need(!anyDuplicated(set_names),
+    "GMT gene set names must be unique; duplicate names are not merged."))
+  stats::setNames(lapply(fields, function(x) unique(x[-c(1, 2)])), set_names)
+}
+
+omics_validate_gene_set_ids <- function(ids, gene_sets, label = "Input") {
+  ids <- unique(as.character(ids))
+  ids <- ids[!is.na(ids) & nzchar(ids)]
+  reference <- unique(as.character(unlist(gene_sets, use.names = FALSE)))
+  reference <- reference[!is.na(reference) & nzchar(reference)]
+  unmatched <- setdiff(ids, reference)
+  case_only <- unmatched[toupper(unmatched) %in% toupper(reference)]
+  n_exact <- length(intersect(ids, reference))
+  shiny::validate(shiny::need(n_exact > 0, paste0(label,
+    " has no exact identifier overlap with the selected gene sets. Check species and identifier format. ",
+    if (length(case_only)) paste0(length(case_only), " ID(s) match only if capitalization is ignored. ") else "",
+    "No gene/protein IDs are converted.")))
+  session <- shiny::getDefaultReactiveDomain()
+  if (length(case_only) && !is.null(session)) {
+    shiny::showNotification(paste0(label, ": ", length(case_only),
+      " ID(s) differ in capitalization and will not match the gene sets: ",
+      paste(head(case_only, 5), collapse = ", "), ". Continuing with ", n_exact,
+      " exact matches; uploaded IDs are unchanged."), type = "warning", duration = 10,
+      id = session$ns(paste0("omics-case-", gsub("[^[:alnum:]]", "-", label))))
+  }
+  invisible(n_exact)
 }

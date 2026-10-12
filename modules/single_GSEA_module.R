@@ -339,31 +339,7 @@ format_leading_edge_preview <- function(x, n = 20) {
 }
 
 get_msigdb_collection <- function(species, category, subcategory = NULL) {
-  
-  msigdbr_args <- list(
-    species = species
-  )
-  
-  formals_names <- names(formals(msigdbr::msigdbr))
-  
-  if ("collection" %in% formals_names) {
-    msigdbr_args$collection <- category
-    if (!is.null(subcategory)) msigdbr_args$subcollection <- subcategory
-  } else {
-    msigdbr_args$category <- category
-    if (!is.null(subcategory)) msigdbr_args$subcategory <- subcategory
-  }
-  
-  msig <- do.call(msigdbr::msigdbr, msigdbr_args)
-  
-  validate(
-    need(
-      all(c("gs_name", "gene_symbol") %in% colnames(msig)),
-      "MSigDB output does not contain expected columns: gs_name and gene_symbol."
-    )
-  )
-  
-  msig
+  omics_get_msigdb(species, category, subcategory)
 }
 
 # =========================================================
@@ -458,30 +434,20 @@ gseaModuleUI <- function(id) {
           # 2) MSigDB Selection
           # -------------------------------------------------
           
-          h4("2. MSigDB Selection"),
-          
-          selectInput(
-            ns("species"),
-            "Species:",
-            choices = c(
-              "Homo sapiens",
-              "Mus musculus",
-              "Rattus norvegicus"
-            ),
-            selected = "Homo sapiens"
+          h4("2. Gene Set Source"),
+          radioButtons(
+            ns("gene_set_source"), "Gene set source:",
+            choices = c("MSigDB" = "msigdb", "Custom GMT file" = "gmt"),
+            selected = "msigdb"
           ),
-          
-          selectInput(
-            ns("category"),
-            "Main category:",
-            choices = msigdb_category_choices(),
-            selected = "H"
+          conditionalPanel(
+            condition = sprintf("input['%s'] == 'msigdb'", ns("gene_set_source")),
+            omics_msigdb_ui(ns)
           ),
-          
-          selectInput(
-            ns("subcategory"),
-            "Subcategory:",
-            choices = NULL
+          conditionalPanel(
+            condition = sprintf("input['%s'] == 'gmt'", ns("gene_set_source")),
+            fileInput(ns("gmt_file"), "Upload custom gene sets (.gmt)", accept = c(".gmt")),
+            p(class = "help-block", "Input IDs must match the GMT exactly. No gene/protein IDs are converted.")
           ),
           
           hr(),
@@ -776,29 +742,7 @@ gseaModuleServer <- function(id) {
     # 3) MSigDB Subcategory Mapping
     # =====================================================
     
-    observeEvent(input$category, {
-      
-      subcats <- msigdb_subcategory_choices(input$category)
-      
-      updateSelectInput(
-        session,
-        "subcategory",
-        choices = subcats,
-        selected = ""
-      )
-      
-    }, ignoreInit = FALSE)
-    
-    get_safe_subcategory <- reactive({
-      
-      allowed <- input$category %in% c("C2", "C3", "C4", "C5", "C7")
-      
-      if (allowed && !is.null(input$subcategory) && input$subcategory != "") {
-        input$subcategory
-      } else {
-        NULL
-      }
-    })
+    get_safe_subcategory <- omics_msigdb_server(input, session, "gene_set_source")
     
     # =====================================================
     # 4) Prepare Ranked List
@@ -865,8 +809,20 @@ gseaModuleServer <- function(id) {
       shinyjs::toggleState("run_gsea", !is_running())
     })
     
+    gene_sets <- reactive({
+      if ((input$gene_set_source %||% "msigdb") == "gmt") {
+        req(input$gmt_file)
+        return(omics_read_gmt(input$gmt_file$datapath))
+      }
+      msig <- get_msigdb_collection(
+        species = input$species, category = input$category,
+        subcategory = get_safe_subcategory()
+      )
+      lapply(split(msig$gene_symbol, msig$gs_name), unique)
+    })
+
     gsea_res_state <- reactive({
-      list(ranks = ranked_list(), species = input$species, category = input$category,
+      list(ranks = ranked_list(), source = input$gene_set_source %||% "msigdb", gmt = input$gmt_file, species = input$species, category = input$category,
         subcategory = get_safe_subcategory(), min_size = input$min_size, max_size = input$max_size)
     })
 
@@ -883,26 +839,18 @@ gseaModuleServer <- function(id) {
         
         ranks <- ranked_list()
         
-        incProgress(0.45, detail = "Loading MSigDB gene sets")
-        
-        msig <- get_msigdb_collection(
-          species = input$species,
-          category = input$category,
-          subcategory = get_safe_subcategory()
-        )
-        
-        pathways <- split(
-          msig$gene_symbol,
-          msig$gs_name
-        )
+        incProgress(0.45, detail = "Loading gene sets")
+        pathways <- gene_sets()
         
         validate(
           need(
             length(pathways) > 0,
-            "No pathways available for the selected MSigDB collection."
+            "No pathways available for the selected gene set source."
           )
         )
         
+        omics_validate_gene_set_ids(names(ranks), pathways, "Ranked list")
+
         overlap_diag <- make_gsea_overlap_diagnostics(
           ranked_ids = names(ranks),
           pathways = pathways
