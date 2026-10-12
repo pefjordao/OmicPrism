@@ -697,7 +697,7 @@ run_pathway_group_statistics <- function(df, p_adjust_method = "BH", show_ns = F
         pairwise_table = tibble(),
         plot_pairwise_table = tibble(),
         omnibus_label = "Only one group available: no statistical test performed",
-        assumption_caption = "At least two groups are required for group comparison."
+        assumption_caption = "At least two groups are required for group comparison"
       )
     )
   }
@@ -2820,7 +2820,7 @@ ssgseaModuleServer <- function(id) {
       } else {
         scope <- paste0("Pairwise significance: adjustment within this pathway (",
           paste(unique(result$pairwise_table$test), collapse = "; "),
-          "). Global FDR: BH across all tested pathways")
+          ")\nGlobal FDR: BH across all tested pathways")
       }
       result$assumption_caption <- paste(result$assumption_caption, scope, sep = "\n")
       result
