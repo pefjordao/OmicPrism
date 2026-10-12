@@ -18,9 +18,9 @@ library(readxl)
 # =========================================================
 
 mfuzz_membership_defaults <- c(
-  low = "#FFEA46",
-  mid = "#7C7B78",
-  high = "#00204D"
+  low = "#E6C27A",
+  mid = "#D78955",
+  high = "#7E294F"
 )
 
 mfuzz_membership_colours <- function(low, mid, high) {
