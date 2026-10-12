@@ -607,6 +607,13 @@ gseaCompareUI <- function(id) {
           ),
           
           numericInput(
+            ns("seed"),
+            "Random seed:",
+            value = 1234,
+            step = 1
+          ),
+
+          numericInput(
             ns("padj_cutoff"),
             "Adjusted P-value cutoff:",
             value = 0.05,
@@ -1032,13 +1039,14 @@ gseaCompareServer <- function(id) {
         id1 = input$col_id_1, stat1 = input$col_stat_1,
         id2 = input$col_id_2, stat2 = input$col_stat_2,
         source = input$gene_set_source %||% "msigdb", gmt = input$gmt_file, species = input$species, category = input$category,
-        subcategory = get_safe_subcategory(), min_size = input$min_size, max_size = input$max_size)
+        subcategory = get_safe_subcategory(), min_size = input$min_size, max_size = input$max_size, seed = input$seed)
     })
 
     comparison_raw <- omics_event_reactive(input$run_compare, {
       omics_set_sizes(input$min_size, input$max_size)
+      omics_number_parameter(input$seed, "Random seed", 0, .Machine$integer.max, TRUE)
 
-      
+
       req(
         input$upload_1,
         input$upload_2,
@@ -1129,7 +1137,9 @@ gseaCompareServer <- function(id) {
         }
         
         run_gsea <- function(ranks, diag, group_label) {
-          
+
+          set.seed(input$seed)
+
           res <- tryCatch(
             {
               fgsea::fgseaMultilevel(

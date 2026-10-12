@@ -480,6 +480,13 @@ gseaModuleUI <- function(id) {
           ),
           
           numericInput(
+            ns("seed"),
+            "Random seed:",
+            value = 1234,
+            step = 1
+          ),
+
+          numericInput(
             ns("padj_cutoff"),
             "Adjusted P-value cutoff:",
             value = 0.05,
@@ -823,13 +830,14 @@ gseaModuleServer <- function(id) {
 
     gsea_res_state <- reactive({
       list(ranks = ranked_list(), source = input$gene_set_source %||% "msigdb", gmt = input$gmt_file, species = input$species, category = input$category,
-        subcategory = get_safe_subcategory(), min_size = input$min_size, max_size = input$max_size)
+        subcategory = get_safe_subcategory(), min_size = input$min_size, max_size = input$max_size, seed = input$seed)
     })
 
     gsea_res <- omics_event_reactive(input$run_gsea, {
       omics_set_sizes(input$min_size, input$max_size)
+      omics_number_parameter(input$seed, "Random seed", 0, .Machine$integer.max, TRUE)
 
-      
+
       is_running(TRUE)
       on.exit(is_running(FALSE), add = TRUE)
       
@@ -867,7 +875,9 @@ gseaModuleServer <- function(id) {
         }
         
         incProgress(0.70, detail = "Running fgseaMultilevel")
-        
+
+        set.seed(input$seed)
+
         res <- tryCatch(
           {
             fgsea::fgseaMultilevel(
