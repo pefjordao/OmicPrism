@@ -2816,11 +2816,11 @@ ssgseaModuleServer <- function(id) {
             adjustment = "BH across all tested pathways")
         result$plot_pairwise_table <- add_y_positions(
           result$pairwise_table %>% filter(!is.na(p_plot), p_plot <= 0.05), df)
-        scope <- "Bracket significance: BH FDR across all tested pathways."
+        scope <- "Bracket significance: BH FDR across all tested pathways"
       } else {
         scope <- paste0("Pairwise significance: adjustment within this pathway (",
           paste(unique(result$pairwise_table$test), collapse = "; "),
-          "). Global FDR: BH across all tested pathways.")
+          "). Global FDR: BH across all tested pathways")
       }
       result$assumption_caption <- paste(result$assumption_caption, scope, sep = "\n")
       result

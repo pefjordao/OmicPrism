@@ -24,11 +24,7 @@ mfuzz_membership_defaults <- c(
 )
 
 mfuzz_membership_colours <- function(low, mid, high) {
-  selected <- unname(c(low, mid, high))
-  if (identical(toupper(selected), unname(mfuzz_membership_defaults))) {
-    return(viridisLite::cividis(256, direction = -1))
-  }
-  selected
+  unname(c(low, mid, high))
 }
 
 mfuzz_clean_column_names <- function(df) {
